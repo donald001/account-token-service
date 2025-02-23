@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html title="eMSP Account & Token Service" lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <link rel="preload" href="css/flUhRq6tzZclQEJ-Vdg-IuiaDsNc.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+    <link href="css/Roboto.css" rel="stylesheet" type="text/css">
+    <link href="css/animate.min.css" rel="stylesheet" type="text/css">
+    <link href="css/quasar.prod.css" rel="stylesheet" type="text/css">
+</head>
+
+<body>
+    <div id="q-app">
+        <q-layout view="hHh lpR fFf">
+            <q-header elevated class="bg-primary text-white" height-hint="98">
+                <q-toolbar>
+                    <q-toolbar-title>
+                        <q-avatar icon="manage_accounts" size="50px" color="cyan-10"> </q-avatar> eMSP Account & Token Service
+                    </q-toolbar-title>
+                    <q-btn flat icon="badge" label="Welcome to use!"></q-btn>
+                    <q-btn flat icon="power_settings_new" label="Exit" @click="logout"></q-btn>
+                </q-toolbar>
+
+                <q-tabs align="center" v-model="tab" active-color="white" class="text-grey-5 shadow-2"
+                    @update:model-value="search">
+                    <q-tab name="ACCOUNT" label="ACCOUNT" icon="manage_accounts"></q-tab>
+                    <q-tab name="TOKEN" label="TOKEN" icon="token"></q-tab>
+                </q-tabs>
+            </q-header>
+
+            <q-page-container class="q-pa-md">
+                <q-form class="row justify-around q-pa-md">
+                    <div class="row">
+                        <q-input v-model="searchDateTime.startDate" filled type="date" hint="Start date"></q-input>
+                        <q-input v-model="searchDateTime.startTime" filled type="time" hint="Start time"></q-input>
+                    </div>
+                    <div class="row">
+                        <q-input v-model="searchDateTime.endDate" filled type="date" hint="End date"></q-input>
+                        <q-input v-model="searchDateTime.endTime" filled type="time" hint="End time"></q-input>
+                    </div>
+                    <q-btn color="primary" icon="search" label="Search" @click="search"></q-btn>
+                    <q-separator spaced vertical></q-separator>
+                    <q-btn color="primary" :icon="tab=='ACCOUNT'?'person_add':'generating_tokens'" label="add" @click="addAccountOrToken"></q-btn>
+                </q-form>
+
+                <q-table v-if="tab=='ACCOUNT'" :rows="accounts" :columns="accountCols" row-key="id" :loading="loading" separator="cell"
+                    :table-header-class="['text-primary', 'text-weight-bolder']" binary-state-sort v-model:pagination="accountPagination" @request="search">
+                    <template v-slot:body-cell-actions="props">
+                        <q-td :props="props">
+                            <q-btn icon="edit" dense label="Edit" @click="editAccount(props.row.id)" ></q-btn>
+                        </q-td>
+                    </template>
+                </q-table>
+                <q-table v-else :rows="tokens" :columns="tokenCols" row-key="id" :loading="loading" separator="cell"
+                         :table-header-class="['text-primary', 'text-weight-bolder']" binary-state-sort v-model:pagination="tokenPagination" @request="search">
+                    <template v-slot:body-cell-actions="props">
+                        <q-td :props="props">
+                            <q-btn icon="edit" dense label="Edit" @click="editToken(props.row.id)" ></q-btn>
+                            <q-btn icon="how_to_reg" dense label="Assign Account" @click="assignAccount(props.row.id)" ></q-btn>
+                        </q-td>
+                    </template>
+                </q-table>
+
+                <!--add account-->
+                <q-dialog v-model="dialog" persistent transition-show="flip-down" transition-hide="flip-up">
+                    <q-card style="max-width: 80vw;">
+                        <q-card-section class="row items-center">
+                            <!--add account-->
+                            <q-form class="q-gutter-md" method="post" style="min-width:500px" v-if="tab=='ACCOUNT' && editingItem.id==null">
+                                <q-input v-model.trim="editingItem.serviceId" label="ServiceId"></q-input>
+                                <q-input v-model.trim="editingItem.fleetSolution" label="FleetSolution"></q-input>
+                            </q-form>
+                            <!--edit account-->
+                            <q-form class="q-gutter-md" method="post" style="min-width:500px" v-if="tab=='ACCOUNT' && editingItem.id && editingItem.id > 0">
+                                <q-input v-model.trim="editingItem.id" label="Id" readonly></q-input>
+                                <q-input v-model.trim="editingItem.serviceId" label="ServiceId" readonly ></q-input>
+                                <q-input v-model.trim="editingItem.fleetSolution" label="FleetSolution" readonly></q-input>
+                                <q-input v-model.trim="editingItem.contractId" label="ContractId" readonly></q-input>
+                                <q-field label="Status" stack-label>
+                                    <template v-slot:control>
+                                        <q-radio v-model="editingItem.status" val="Created" label="Created"></q-radio>
+                                        <q-radio v-model="editingItem.status" val="Activated" label="Activated"></q-radio>
+                                        <q-radio v-model="editingItem.status" val="Deactivated" label="Deactivated"></q-radio>
+                                    </template>
+                                </q-field>
+                            </q-form>
+                            <!--add token-->
+                            <q-form class="q-gutter-md" method="post" style="min-width:500px" v-if="tab=='TOKEN' && editingItem.id==null">
+                                <q-input v-model.trim="editingItem.token" label="token"></q-input>
+                                <q-field label="Type" stack-label>
+                                    <template v-slot:control>
+                                        <q-radio v-model="editingItem.type" val="RFID" label="RFID"></q-radio>
+                                        <q-radio v-model="editingItem.type" val="EMAID" label="EMAID"></q-radio>
+                                        <q-radio v-model="editingItem.type" val="MAC" label="MAC-Address"></q-radio>
+                                    </template>
+                                </q-field>
+                            </q-form>
+                            <!--edit token-->
+                            <q-form class="q-gutter-md" method="post" style="min-width:500px" v-if="tab=='TOKEN' && editingItem.id && editingItem.id > 0">
+                                <q-input v-model.trim="editingItem.id" label="Id" readonly></q-input>
+                                <q-input v-model.trim="editingItem.token" label="Token"></q-input>
+                                <q-input v-model.trim="editingItem.type" label="Type"></q-input>
+                                <q-input v-model.trim="editingItem.accountId" label="AccountId" readonly></q-input>
+
+                                <q-field label="Status" stack-label>
+                                    <template v-slot:control>
+                                        <q-radio v-model="editingItem.status" val="Created" label="Created"></q-radio>
+                                        <q-radio v-model="editingItem.status" val="Assigned" label="Assigned"></q-radio>
+                                        <q-radio v-model="editingItem.status" val="Activated" label="Activated"></q-radio>
+                                        <q-radio v-model="editingItem.status" val="Deactivated" label="Deactivated"></q-radio>
+                                    </template>
+                                </q-field>
+                            </q-form>
+                        </q-card-section>
+
+                        <q-card-actions align="right">
+                            <q-btn flat label="Cancel" color="primary" @click="clearAll" v-close-popup></q-btn>
+                            <q-btn flat label="Confirm" color="primary" @click="saveEntity" v-close-popup></q-btn>
+                        </q-card-actions>
+                    </q-card>
+                </q-dialog>
+                <!--assign account-->
+                <q-dialog v-model="assignDialog" persistent transition-show="flip-down" transition-hide="flip-up">
+                    <q-card style="max-width: 80vw;">
+                        <q-card-section class="row items-center">
+                            <q-table :rows="selectableAccounts" :columns="selectableAccountCols" row-key="id" :loading="loading"
+                                     :table-header-class="['text-primary', 'text-weight-bolder']" binary-state-sort selection="single"
+                                     v-model:selected="selectedAccount" v-model:pagination="assignPagination" @request="onAssignRequest">
+
+                            </q-table>
+                        </q-card-section>
+
+                        <q-card-actions align="right">
+                            <q-btn flat label="Cancel" color="primary"  v-close-popup></q-btn>
+                            <q-btn flat label="Confirm" color="primary" @click="submitAssignment" v-close-popup></q-btn>
+                        </q-card-actions>
+                    </q-card>
+                </q-dialog>
+
+            </q-page-container>
+
+        </q-layout>
+    </div>
+
+    <!-- Add the following at the end of your body tag -->
+    <script src="js/vue.global.prod.js"></script>
+    <script src="js/quasar.umd.prod.js"></script>
+    <script src="js/zh-CN.umd.prod.js"></script>
+    <script src="js/axios.min.js"></script>
+    <script>
+        const { ref, onMounted } = Vue
+        const { useQuasar } = Quasar
+        const app = Vue.createApp({
+            setup() {
+                const $q = useQuasar()
+                const tab = ref('ACCOUNT')
+                const loading = ref(false)
+                const hostPort = "/" //for test can set as:  / http://localhost:8080
+                const searchDateTime = ref({})
+                const accounts = ref([])
+                const tokens = ref([])
+                const editingItem = ref({});
+                const name = ref("")
+                const activeOnly = ref(false)
+                const dialog = ref(false);
+                const assignDialog = ref(false)
+                const assignedTokeId = ref("")
+                const selectableAccounts = ref([])
+                const selectedAccount = ref([])
+                const accountCols = [
+                    { name: "id", label: "id", field: "id", sortable: true },
+                    { name: "serviceId", label: "ServiceId", field: "serviceId" },
+                    { name: "fleetSolution", label: "FleetSolution", field: "fleetSolution"},
+                    { name: "status", label: "Status", field: "status", sortable: true },
+                    { name: "contractId", label: "ContractId", field: "contractId", sortable: true },
+                    { name: "createdTime", label: "CreatedTime", field: "createdTime", sortable: true, format: (val) => `${formatDate(val)}` },
+                    { name: "lastUpdated", label: "LastUpdated", field: "lastUpdated", sortable: true, format: (val) => `${formatDate(val)}` },
+                    { name: "actions", label: "Edit", field: "id" }
+                ];
+                const selectableAccountCols = [
+                    { name: "id", label: "id", field: "id", sortable: true },
+                    { name: "serviceId", label: "ServiceId", field: "serviceId" },
+                    { name: "fleetSolution", label: "FleetSolution", field: "fleetSolution"},
+                    { name: "status", label: "Status", field: "status", sortable: true },
+                    { name: "contractId", label: "ContractId", field: "contractId", sortable: true },
+                    { name: "createdTime", label: "CreatedTime", field: "createdTime", sortable: true, format: (val) => `${formatDate(val)}` },
+                    { name: "lastUpdated", label: "LastUpdated", field: "lastUpdated", sortable: true, format: (val) => `${formatDate(val)}` },
+                ];
+                const tokenCols = [
+                    { name: "id", label: "id", field: "id", sortable: true },
+                    { name: "token", label: "Token", field: "token", sortable: true },
+                    { name: "type", label: "Type", field: "type", sortable: true },
+                    { name: "status", label: "Status", field: "status", sortable: true },
+                    { name: "accountId", label: "AccountId", field: "accountId", sortable: true },
+                    { name: "createdTime", label: "CreatedTime", field: "createdTime", sortable: true, format: (val) => `${formatDate(val)}` },
+                    { name: "lastUpdated", label: "LastUpdated", field: "lastUpdated", sortable: true, format: (val) => `${formatDate(val)}` },
+                    { name: "actions", label: "Edit", field: "id" }
+                ]
+                const assignPagination = ref({
+                    sortBy: 'lastUpdated',
+                    descending: true,
+                    page: 1,
+                    rowsPerPage: 5,
+                    rowsNumber: 10
+                })
+                const accountPagination = ref({
+                    sortBy: 'lastUpdated',
+                    descending: true,
+                    page: 1,
+                    rowsPerPage: 10,
+                    rowsNumber: 10
+                })
+                const tokenPagination = ref({
+                    sortBy: 'lastUpdated',
+                    descending: true,
+                    page: 1,
+                    rowsPerPage: 10,
+                    rowsNumber: 10
+                })
+                let bearer = 'Bearer ' + $q.localStorage.getItem("token");
+                const userName = $q.localStorage.getItem("username")
+                const headers = ref([{ name: 'Authorization', value: bearer },
+                { name: 'name', value: userName }]);
+                axios.defaults.headers.common['Authorization'] = bearer;
+                axios.defaults.baseURL = hostPort;
+                let baseCols = ['valid_to', 'source', 'rec_level', 'create_time', 'modified_time', 'editor']
+                let idenCols = ['ident'];
+                let phoneCols = ['ident', 'phone_number', 'office_phone_number',]
+                let nameCols = ['name']
+                
+
+
+                function formatDateFromTimestamp(timestamp) {
+                    return timestamp ? Quasar.date.formatDate(parseInt(timestamp), 'YYYY-MM-DD HH:mm:ss') : "";
+                }
+                function formatDate(str) {
+                    return str ? Quasar.date.formatDate(new Date(str), 'YYYY-MM-DD HH:mm:ss') : "";
+                }
+                function addAccountOrToken(){
+                    clearAll()
+                    dialog.value = true
+                }
+                function editAccount(id){
+                    editingItem.value = accounts.value.find(item => item.id === id);
+                    dialog.value = true
+                }
+                function editToken(id){
+                    editingItem.value = tokens.value.find(item => item.id === id);
+                    dialog.value = true
+                }
+                function saveEntity() {
+                    //insert
+                    let method = 'post';
+                    let url = tab.value.toLowerCase();
+                    //update
+                    if (editingItem.value.id) {
+                        method = 'put';
+                        url =url+'/'+editingItem.value.id+ '/status?status='+editingItem.value.status;
+                    }
+                    loading.value=true;
+                    axios({ method: method, url:url, data: editingItem.value }).then(r => {
+                        if (method === 'post'){
+                            $q.notify("successfully created 1 item!")
+                        }else {
+                            $q.notify("successfully updated "+r.data+" item!")
+                        }
+                    }) .catch(alertError).finally(() => {
+                        loading.value = false;
+                        search({pagination:(tab.value==='ACCOUNT'?accountPagination.value:tokenPagination.value)})
+                    });
+                }
+                function search(props) {
+                    loading.value = true;
+                    let currentDate=Quasar.date.formatDate(new Date(), 'YYYY-MM-DD');
+                    let startTime = (null==searchDateTime.value.startDate?'1970-01-01':searchDateTime.value.startDate)
+                        +'T'+(null==searchDateTime.value.startTime?'00:00:00':searchDateTime.value.startTime)
+                    let endTime = (null==searchDateTime.value.endDate?currentDate:searchDateTime.value.endDate)
+                        +'T'+(null==searchDateTime.value.endTime?'23:59:59':searchDateTime.value.endTime)
+                    let pagination=props.pagination;
+                    if (null==props.pagination){
+                        if (tab.value==='ACCOUNT'){
+                            pagination=accountPagination.value;
+                        }else {
+                            pagination=tokenPagination.value;
+                        }
+                    }
+                    const { page, rowsPerPage, sortBy, descending } = pagination;
+
+                    axios.get(tab.value.toLowerCase() +"/all", { params: { start:startTime,end:endTime,
+                            page:page-1,size:rowsPerPage,sort:sortBy+(descending?',desc':',asc')} })
+                        .then((res) => {
+                            //console.log(res.data);
+                            if (null == res.data) {
+                                $q.notify({
+                                    message: "Failed for:" + res.data ? res.data?.error : res.data,
+                                    color: "red",
+                                    timeout: 3000,
+                                });
+                            } else {
+                                //blacklist.value = res.data.map(d => JSON.parse(d));
+                                if (tab.value==='ACCOUNT'){
+                                    accounts.value = res.data.content
+                                    //accounts.value.splice(0, accounts.value.length, ...res.data.content)
+                                    updateLocalPagination(res.data.page,accountPagination,sortBy, descending)
+                                }else {
+                                    tokens.value = res.data.content
+                                    updateLocalPagination(res.data.page,tokenPagination,sortBy, descending)
+                                }
+                            }
+                        })
+                        .catch(alertError).finally(() => {
+                            loading.value = false;
+                        });
+                }
+                function assignAccount(tokeId){
+                    assignDialog.value = true;
+                    assignedTokeId.value=tokeId;
+                    onAssignRequest({pagination:assignPagination.value})
+                }
+                function onAssignRequest(props){
+                    loading.value = true;
+                    const { page, rowsPerPage, sortBy, descending } = props.pagination
+                    axios.get("account/all", { params: { page:page-1,size:rowsPerPage,sort:sortBy+(descending?',desc':',asc') } }).then(r => {
+                        console.log(r.data);
+                        selectableAccounts.value=r.data.content;
+                        updateLocalPagination(r.data.page,assignPagination, sortBy, descending)
+                    }).catch(alertError).finally(() => {
+                        loading.value = false;
+                    });
+                }
+                function updateLocalPagination(serverPage, local, sortBy, descending){
+                    local.value.page=serverPage.number+1;
+                    local.value.rowsPerPage=serverPage.size;
+                    local.value.rowsNumber=serverPage.totalElements;
+                    local.value.sortBy=sortBy;
+                    local.value.descending=descending;
+                }
+                function submitAssignment(){
+                    axios.put('token/'+assignedTokeId.value+'/account',null,{params:{accountId: selectedAccount.value[0].id}}).then(r => {
+                        $q.notify("successfully assigned "+r.data+" item!")
+                    }).finally(()=>{
+                        search({pagination:(tab.value==='ACCOUNT'?accountPagination.value:tokenPagination.value)})
+                    })
+                }
+                function logout() {
+                    $q.notify({
+                        message: "Please close this page.",
+                        color: "green",
+                        timeout: 3000,
+                    });
+                }
+
+                function clearAll() {
+                    editingItem.value = {};
+
+                }
+                function alertError(e){
+                    let msg = ("Operation Failed: " + e.response.data.error);
+                    $q.dialog({
+                        title: 'Error!',
+                        message: msg
+                    })
+                }
+                onMounted(() => {
+                    search({pagination:(tab.value==='ACCOUNT'?accountPagination.value:tokenPagination.value)})
+                })
+                return {
+                    tab, loading, hostPort,searchDateTime, accounts, accountCols, headers, editingItem, name, userName,
+                    activeOnly, dialog, tokens, tokenCols,  formatDate,accountPagination, assignPagination,tokenPagination,
+                     assignedTokeId, assignDialog, selectableAccounts, selectedAccount,
+                    addAccountOrToken,saveEntity,editAccount, editToken,onAssignRequest,submitAssignment,
+                    search, logout,assignAccount,selectableAccountCols,
+                     clearAll
+                }
+            }
+        })
+
+        app.use(Quasar, {
+            config: {
+                brand: {
+                    primary: "#1d91a2",
+                    secondary: "#67b5c2",
+                },
+                notify:{
+                    color: "green",
+                }
+            }
+        })
+        //Quasar.lang.set(Quasar.lang.zhCN)
+        app.mount('#q-app')
+    </script>
+</body>
+
+</html>
